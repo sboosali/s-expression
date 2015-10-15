@@ -23,8 +23,11 @@ source-repository head
 library
 
  exposed-modules:
+  Data.Sexp 
 
  build-depends:
+  lens ==4.12.*, 
+  semigroups ==0.16.*, 
 
   base ==4.8.*
 
@@ -32,5 +35,4 @@ library
  hs-source-dirs: sources
  ghc-options: -Wall
  default-extensions: AutoDeriveTypeable
-
 
