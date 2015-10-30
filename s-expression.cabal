@@ -63,8 +63,12 @@ library
   Data.Sexp.Main 
 
  build-depends:
+
   lens ==4.12.*, 
   semigroups ==0.16.*, 
+
+  -- cabal sandbox add-source ... 
+  derive-monoid ==0.0.0,  
 
   base ==4.8.*
 

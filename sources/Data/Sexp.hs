@@ -1,14 +1,14 @@
-{-# LANGUAGE AutoDeriveTypeable, DeriveDataTypeable, DeriveGeneric, DeriveAnyClass, DeriveFunctor, DeriveFoldable, DeriveTraversable #-}
-{-# LANGUAGE LambdaCase, TypeFamilies #-}
+{-# LANGUAGE AutoDeriveTypeable, DeriveDataTypeable, DeriveGeneric, DeriveAnyClass, DeriveFunctor, DeriveFoldable, DeriveTraversable  #-}
+{-# LANGUAGE TemplateHaskell, LambdaCase, TypeFamilies #-}
 module Data.Sexp where
 
+import Derive.List (deriveList) 
 import Control.Lens (Plated (..)) 
-import Data.Semigroup (Semigroup (..)) 
 
 import Data.Foldable  (Foldable (..))
 import Data.Data (Data) 
 import GHC.Generics (Generic) 
-import GHC.Exts       (IsList (..), IsString (..))
+import GHC.Exts       (IsString (..))
 
 
 {- | a heterogenous list.
@@ -18,16 +18,25 @@ a <http://en.wikipedia.org/wiki/Common_Lisp#The_function_namespace Lisp-2> S-exp
 * @f@ is the function namespace
 * @a@ is the atom namespace
 
-you could define @type Lisp1 a = Sexp a a@, but:
+you could define @type Lisp1 a = Sexp a a@. with some caveats: 
 
 * @f@ is ignored by 'Monad'ic methods like 'joinSexp'
-* you might want to make sure to eval the @f@ to some normal form, like when matching against it in 'evalSexp'
 * @plate@ doesn't reach the @f@, even when @f ~ a@, as the 'Plated' instance is manual, not automatic via @Data@.
 
-the 'List' case is just a specialized @'Sexp' Void@, but easier to work with than:
+the 'List' case is just a specialized @'Sexp' ()@, but easier to work with than:
 
 * @Sexp (Maybe f) [Sexp f a]@ (where Nothing would represent 'List')
 * forcing each concrete @f@ to hold a unit case (which would represent 'List')
+
+@Sexp "Data.Void.Void" a@ is isomorphic to: 
+
+@
+data Sexp_ a
+ = Atom a 
+ | List [Sexp_ a]
+@ 
+
+when you only care about lists. 
 
 examples: 
 
@@ -117,7 +126,7 @@ proofs of laws:
      List ms -> List (fmap joinSexp ms)
     @
     
-* associativity: @join . join = join . fmap join@
+* associativity(3): @join . join = join . fmap join@
 
     @
     TODO
@@ -129,30 +138,11 @@ instance Monad (Sexp f) where
  (>>=)  = bindSexp
 -- TODO laws, verified as @QuickCheck@ properties:
 
-instance Semigroup (Sexp f a) where
- (<>) = appendSexp
-
-instance Monoid (Sexp f a) where
- mempty  = emptySexp
- mappend = (<>)
-
 instance Plated (Sexp f a) where
  plate f = \case
   Atom a    -> Atom   <$> pure a
   List   ps -> List   <$> traverse f ps
   Sexp g ps -> Sexp g <$> traverse f ps
-
-{-| 
-
->>> :set -XOverloadedLists 
->>> ["f", "x", ["g", "y"], "z"] :: Sexp f String
-List [Atom "f",Atom "x",List [Atom "g",Atom "y"],Atom "z"]
-
--}
-instance IsList (Sexp f a) where
- type Item (Sexp f a) = (Sexp f a)
- fromList = List
- toList   = toSexpList
 
 {-| 
 
@@ -184,29 +174,19 @@ joinSexp = \case
  Sexp f ess -> Sexp f (joinSexp <$> ess)
 {-# INLINEABLE joinSexp #-} -- to hit the Atom I hope.
 
-{-| refines any Sexp to a list, which can be given to the 'List'.
--}
+deriveList ''Sexp 'List 
+
+{-| refines any Sexp to a list, which can be given to the 'List'. -}
 toSexpList :: Sexp f a -> [Sexp f a]
-toSexpList = \case
- List es -> es
- e       -> [e]
-{-# INLINE toSexpList #-}
 
-{-| 
-
->>> appendSexp (Atom "f") (List [Atom "x"])
+{-| >>> appendSexp (Atom "f") (List [Atom "x"])
 List [Atom "f",Atom "x"]
-
 -}
 appendSexp :: Sexp f a -> Sexp f a -> Sexp f a
-appendSexp x y = List (toSexpList x <> toSexpList y)
-{-# INLINE appendSexp #-}
 
-{-| @emptySexp = 'List' []@
--}
+{-| @emptySexp = 'List' []@ -}
 emptySexp :: Sexp f a
-emptySexp = List []
-{-# INLINE emptySexp #-}
+
 
 {-| fold over an sexp. 
 
@@ -270,7 +250,7 @@ splatSexpList :: (Applicative m, Monoid b) => (Sexp g b -> m b) -> [Sexp g b] ->
 splatSexpList eval = fmap fold . traverse eval 
 {-# INLINE splatSexpList #-}
 
-{-| 
+{-| inject a list of atoms.  
 
 >>> listSexp [1,2,3]
 List [Atom 1,Atom 2,Atom 3]
@@ -280,10 +260,46 @@ listSexp :: [a] -> Sexp f a
 listSexp = List . map Atom 
 {-# INLINE listSexp #-}
 
--- data SexpF a r
+-- data SexpF f a r
 --  = AtomF a
+--  | FuncF (f r) 
 --  | ListF [r]
 --  deriving (Show,Read,Eq,Ord,Functor,Data,Generic)
 
 -- type Sexp' a = Fix (SexpF a)
+
+{- helper when converting from other sexp types, like from a parsing library. 
+
+@Either Bytestring [Bytestring]@ 
+
+is isomorphic to: 
+
+e.g. the @atto-lisp@ package defines: 
+
+@
+data Lisp
+  = Symbol Text   -- ^ A symbol (including keyword)
+  | String Text   -- ^ A string.
+  | Number Number   -- ^ A number
+  | List [Lisp]     -- ^ A proper list: @(foo x 42)@
+  | DotList [Lisp] Lisp  -- ^ A list with a non-nil tail: @(foo x
+                         -- . 42)@.  The list argument must be
+                         -- non-empty and the tail must be non-'nil'.
+@ 
+
+we can define: 
+
+@
+type AttoLispSexp = Sexp AttoLispFunc AttoLispAtom
+data AttoLispAtom = SymbolAtom Text | StringAtom Text | NumberAtom Number 
+TODO data AttoLispFunc r = DotListFunc [r] r 
+@
+
+
+-}
+-- fromSexp ::  -> 
+-- fromSexp = 
+
+-- toSexp ::  -> 
+-- toSexp = 
 
