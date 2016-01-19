@@ -9,6 +9,7 @@ import Data.Foldable  (Foldable (..))
 import Data.Data (Data) 
 import GHC.Generics (Generic) 
 import GHC.Exts       (IsString (..))
+import Data.Void (Void) 
 
 
 {- | a heterogenous list.
@@ -27,16 +28,6 @@ the 'List' case is just a specialized @'Sexp' ()@, but easier to work with than:
 
 * @Sexp (Maybe f) [Sexp f a]@ (where Nothing would represent 'List')
 * forcing each concrete @f@ to hold a unit case (which would represent 'List')
-
-@Sexp "Data.Void.Void" a@ is isomorphic to: 
-
-@
-data Sexp_ a
- = Atom a 
- | List [Sexp_ a]
-@ 
-
-when you only care about lists. 
 
 examples: 
 
@@ -57,6 +48,40 @@ data Sexp f a
  | List   [Sexp f a]
  | Sexp f [Sexp f a]
  deriving (Show,Read,Eq,Ord,Functor,Foldable,Traversable,Data,Generic)
+
+{-| isomorphic to: 
+
+@
+data Sexp_ a
+ = Atom_ a 
+ | List_ [Sexp_ a]
+@ 
+
+when you only care about lists (e.g. to interface with other s-expression libraries).  
+
+-}
+type Sexp_ = Sexp Void 
+
+{-| 
+
+@
+data ByteSexp
+ = Atom ByteString
+ | List [ByteSexp]
+
+bytesexp2sexp :: ByteSexp -> 'Sexp_' ByteString
+bytesexp2sexp = 'toSexp' $ \case
+ Atom s  -> Left  s 
+ List es -> Right es 
+@
+
+-}
+toSexp :: (r -> Either a [r]) -> (r -> Sexp_ a)  
+toSexp f = go
+ where 
+ go r = case f r of 
+  Left  a  -> Atom a 
+  Right rs -> List (map go rs) 
 
 -- | default instance via the 'Monad' subclass.
 instance Applicative (Sexp f) where

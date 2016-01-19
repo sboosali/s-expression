@@ -63,14 +63,13 @@ library
   Data.Sexp.Main 
 
  build-depends:
-
-  lens ==4.12.*, 
-  semigroups ==0.16.*, 
+    base ==4.8.*
 
   -- cabal sandbox add-source ... 
-  derive-monoid ==0.0.0,  
+  , derive-monoid ==0.0.0  
 
-  base ==4.8.*
+  , lens ==4.13.* 
+  , semigroups ==0.18.* 
 
  default-language: Haskell2010
  hs-source-dirs: sources
@@ -81,8 +80,8 @@ library
 executable example
  main-is: Main.hs
  build-depends:
-  s-expression ==0.0.0,
-  base ==4.8.*
+    base ==4.8.*
+  , s-expression
  default-language: Haskell2010
  hs-source-dirs: .
  ghc-options: -Wall
